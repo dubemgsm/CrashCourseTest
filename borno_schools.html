@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Borno Schools & Political Violence Map</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        .info h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+        .legend {
+            line-height: 18px;
+            color: #555;
+            font-size: 12px;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+            margin-bottom: 3px;
+        }
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            z-index: 400;
+            font-size: 14px;
+        }
+        .controls select {
+            padding: 5px;
+            margin: 5px 0;
+            width: 100%;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+        }
+        .controls label {
+            font-weight: bold;
+            display: block;
+            margin-top: 8px;
+        }
+        .popup-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #d32f2f;
+        }
+        .popup-content {
+            font-size: 12px;
+        }
+        .school-popup {
+            font-size: 12px;
+        }
+        .school-popup strong {
+            color: #1565c0;
+        }
+        .top-link {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            z-index: 400;
+            font-size: 12px;
+        }
+        .top-link a {
+            color: #1565c0;
+            text-decoration: none;
+        }
+        .top-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="top-link">
+        <a href="politicalviolence.html">View National Map →</a>
+    </div>
+    <div class="controls">
+        <label>Filter by Metric:</label>
+        <select id="metricFilter">
+            <option value="Events">Violence Events</option>
+            <option value="Fatalities">Fatalities</option>
+            <option value="Schools">Schools Only</option>
+        </select>
+        <br/>
+        <label>School Status:</label>
+        <select id="schoolFilter">
+            <option value="">All Schools</option>
+            <option value="Open">Open</option>
+            <option value="Closed">Closed</option>
+        </select>
+    </div>
+
+    <script>
+        // Initialize map centered on Borno
+        const map = L.map('map').setView([11.5, 13.15], 8);
+        
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        let violenceData = [];
+        let schoolsData = [];
+        let markers = [];
+        let schoolMarkers = [];
+
+        // Borno LGA coordinates (approximate centers)
+        const bornoLGAs = {
+            'Bama': [10.77, 13.78],
+            'Bayo': [11.25, 13.50],
+            'Biu': [10.27, 12.17],
+            'Chibok': [10.93, 12.30],
+            'Damboa': [11.43, 12.35],
+            'Dikwa': [12.73, 13.90],
+            'Gujba': [11.50, 11.23],
+            'Guzamala': [12.55, 14.27],
+            'Gwoza': [10.97, 13.57],
+            'Jere': [11.85, 13.17],
+            'Kaga': [12.33, 13.32],
+            'Kala-Balge': [12.82, 13.55],
+            'Kangarum': [13.35, 14.12],
+            'Katagum': [11.93, 11.05],
+            'Kauran Namoda': [12.77, 13.85],
+            'Konduga': [11.80, 12.97],
+            'Logon Chabol': [11.25, 14.55],
+            'Mafa': [11.95, 13.73],
+            'Magumeri': [12.15, 11.68],
+            'Maiduguri': [11.85, 13.15],
+            'Marte': [13.20, 14.28],
+            'Mobbar': [13.30, 13.92],
+            'Monguno': [13.03, 13.70],
+            'Ngala': [12.55, 14.45],
+            'Nganzai': [12.85, 13.15],
+            'Shani': [12.03, 11.38],
+            'Yobe': [11.65, 11.78]
+        };
+
+        function getViolenceColor(value, metric) {
+            if (!value || value === 0) return '#cccccc';
+            if (metric === 'Fatalities') {
+                if (value > 500) return '#8B0000';
+                if (value > 100) return '#DC143C';
+                if (value > 50) return '#FF6347';
+                if (value > 10) return '#FFA07A';
+                return '#FFE4E1';
+            } else {
+                if (value > 200) return '#1a237e';
+                if (value > 100) return '#0d47a1';
+                if (value > 50) return '#1565c0';
+                if (value > 10) return '#42a5f5';
+                return '#bbdefb';
+            }
+        }
+
+        function getSchoolColor(status) {
+            return status === 'Open' ? '#4CAF50' : '#FF9800';
+        }
+
+        // Load both CSVs
+        Promise.all([
+            fetch('Nigeria_HRP_political_violence.csv').then(r => r.text()),
+            fetch('North_East_schools.csv').then(r => r.text())
+        ]).then(([violenceCSV, schoolsCSV]) => {
+            // Parse violence data
+            Papa.parse(violenceCSV, {
+                header: true,
+                complete: function(results) {
+                    violenceData = results.data
+                        .filter(row => row.Country && row.Admin1 === 'Borno')
+                        .reduce((acc, row) => {
+                            const existing = acc.find(r => r.Admin2 === row.Admin2);
+                            if (existing) {
+                                existing.events += parseInt(row.Events) || 0;
+                                existing.fatalities += parseInt(row.Fatalities) || 0;
+                            } else {
+                                acc.push({
+                                    admin2: row.Admin2,
+                                    events: parseInt(row.Events) || 0,
+                                    fatalities: parseInt(row.Fatalities) || 0
+                                });
+                            }
+                            return acc;
+                        }, []);
+                }
+            });
+
+            // Parse schools data
+            Papa.parse(schoolsCSV, {
+                header: true,
+                complete: function(results) {
+                    schoolsData = results.data.filter(row => row['State Name'] === 'Borno');
+                    updateMap();
+                }
+            });
+
+            // Add legend
+            const info = L.control();
+            info.onAdd = function() {
+                this._div = L.DomUtil.create('div', 'info');
+                this._div.innerHTML = `
+                    <h4>Borno: Schools & Violence</h4>
+                    <div class="legend">
+                        <p><strong>Violence Intensity:</strong><br/>
+                        <i style="background: #8B0000"></i> High (500+)<br/>
+                        <i style="background: #DC143C"></i> Medium (100-500)<br/>
+                        <i style="background: #FF6347"></i> Moderate (50-100)<br/>
+                        <i style="background: #FFA07A"></i> Low (1-50)<br/>
+                        <i style="background: #4CAF50"></i> School (Open)<br/>
+                        <i style="background: #FF9800"></i> School (Closed)
+                        </p>
+                    </div>
+                `;
+                return this._div;
+            };
+            info.addTo(map);
+        });
+
+        function updateMap() {
+            markers.forEach(m => map.removeLayer(m));
+            schoolMarkers.forEach(m => map.removeLayer(m));
+            markers = [];
+            schoolMarkers = [];
+
+            const metric = document.getElementById('metricFilter').value;
+            const schoolFilter = document.getElementById('schoolFilter').value;
+
+            // Add violence markers
+            if (metric !== 'Schools') {
+                violenceData.forEach(row => {
+                    const coords = bornoLGAs[row.admin2];
+                    if (coords) {
+                        const value = metric === 'Events' ? row.events : row.fatalities;
+                        const color = getViolenceColor(value, metric);
+                        const size = Math.min(value / 10 + 3, 20);
+
+                        const marker = L.circleMarker(coords, {
+                            radius: size,
+                            fillColor: color,
+                            color: '#333',
+                            weight: 2,
+                            opacity: 0.8,
+                            fillOpacity: 0.7
+                        });
+
+                        marker.bindPopup(`
+                            <div class="popup-title">${row.admin2} LGA</div>
+                            <div class="popup-content">
+                                <strong>Events:</strong> ${row.events}<br/>
+                                <strong>Fatalities:</strong> ${row.fatalities}
+                            </div>
+                        `);
+
+                        marker.addTo(map);
+                        markers.push(marker);
+                    }
+                });
+            }
+
+            // Add school markers
+            if (metric !== 'Violence') {
+                let filteredSchools = schoolsData;
+                if (schoolFilter) {
+                    filteredSchools = schoolsData.filter(s => s['School Status'] === schoolFilter);
+                }
+
+                // Aggregate schools by LGA
+                const schoolsByLGA = {};
+                filteredSchools.forEach(school => {
+                    const lga = school['LGA Name'];
+                    if (!schoolsByLGA[lga]) {
+                        schoolsByLGA[lga] = { count: 0, open: 0, closed: 0, schools: [] };
+                    }
+                    schoolsByLGA[lga].count++;
+                    if (school['School Status'] === 'Open') schoolsByLGA[lga].open++;
+                    else schoolsByLGA[lga].closed++;
+                    schoolsByLGA[lga].schools.push(school);
+                });
+
+                Object.entries(schoolsByLGA).forEach(([lga, data]) => {
+                    const coords = bornoLGAs[lga];
+                    if (coords) {
+                        const color = getSchoolColor(schoolFilter || 'Mixed');
+                        const schoolMarker = L.circleMarker(coords, {
+                            radius: Math.min(data.count / 20 + 4, 15),
+                            fillColor: schoolFilter ? (schoolFilter === 'Open' ? '#4CAF50' : '#FF9800') : '#2196F3',
+                            color: '#fff',
+                            weight: 2,
+                            opacity: 0.8,
+                            fillOpacity: 0.6
+                        });
+
+                        schoolMarker.bindPopup(`
+                            <div class="school-popup">
+                                <strong>${lga} - Schools</strong><br/>
+                                Total: ${data.count}<br/>
+                                Open: ${data.open}<br/>
+                                Closed: ${data.closed}
+                            </div>
+                        `);
+
+                        schoolMarker.addTo(map);
+                        schoolMarkers.push(schoolMarker);
+                    }
+                });
+            }
+        }
+
+        document.getElementById('metricFilter').addEventListener('change', updateMap);
+        document.getElementById('schoolFilter').addEventListener('change', updateMap);
+    </script>
+</body>
+</html>
