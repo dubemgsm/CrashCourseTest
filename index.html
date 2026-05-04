@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nigeria Political Violence Events Map</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        .info h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+        .legend {
+            line-height: 18px;
+            color: #555;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            z-index: 400;
+            font-size: 14px;
+        }
+        .controls select {
+            padding: 5px;
+            margin: 5px 0;
+            width: 100%;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+        }
+        .popup-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #d32f2f;
+        }
+        .popup-content {
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="controls">
+        <label>Filter by Year:</label>
+        <select id="yearFilter">
+            <option value="">All Years</option>
+        </select>
+        <br/>
+        <label>Metric:</label>
+        <select id="metricFilter">
+            <option value="Events">Events</option>
+            <option value="Fatalities">Fatalities</option>
+        </select>
+    </div>
+
+    <script>
+        // Initialize map
+        const map = L.map('map').setView([9.0765, 7.3986], 5);
+        
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        let allData = [];
+        let markers = [];
+        let admin1Coords = {};
+
+        // Nigeria Admin1 approximate coordinates
+        const nigeriaRegions = {
+            'Abia': [5.45, 7.37],
+            'Adamawa': [9.20, 13.30],
+            'Akwa Ibom': [4.32, 8.15],
+            'Anambra': [6.49, 7.00],
+            'Bauchi': [10.31, 11.50],
+            'Bayelsa': [4.75, 6.26],
+            'Benue': [7.48, 8.73],
+            'Borno': [11.50, 13.15],
+            'Cross River': [5.95, 8.85],
+            'Delta': [5.74, 5.73],
+            'Ebonyi': [6.35, 8.12],
+            'Edo': [6.56, 5.75],
+            'Ekiti': [7.62, 5.22],
+            'Enugu': [6.43, 7.51],
+            'FCT': [9.05, 7.54],
+            'Gombe': [10.29, 11.17],
+            'Imo': [5.48, 7.03],
+            'Jigawa': [12.00, 9.25],
+            'Kaduna': [10.52, 7.44],
+            'Kano': [11.99, 8.51],
+            'Katsina': [12.99, 7.61],
+            'Kebbi': [12.44, 4.20],
+            'Kogi': [7.49, 6.73],
+            'Kwara': [8.80, 4.59],
+            'Lagos': [6.57, 3.35],
+            'Nasarawa': [8.90, 8.98],
+            'Niger': [9.17, 6.27],
+            'Ogun': [6.67, 3.35],
+            'Ondo': [7.25, 5.23],
+            'Osun': [7.78, 4.56],
+            'Oyo': [8.00, 3.94],
+            'Plateau': [9.30, 9.77],
+            'Rivers': [4.70, 7.52],
+            'Sokoto': [13.00, 5.25],
+            'Taraba': [7.91, 11.27],
+            'Yobe': [11.88, 11.50],
+            'Zamfara': [12.80, 6.27]
+        };
+
+        // Color scale based on intensity
+        function getColor(value, metric) {
+            if (!value || value === 0) return '#cccccc';
+            if (metric === 'Fatalities') {
+                if (value > 1000) return '#8B0000';
+                if (value > 500) return '#DC143C';
+                if (value > 100) return '#FF6347';
+                if (value > 50) return '#FFA07A';
+                if (value > 10) return '#FFB6C1';
+                return '#FFE4E1';
+            } else {
+                if (value > 500) return '#1a237e';
+                if (value > 200) return '#0d47a1';
+                if (value > 100) return '#1565c0';
+                if (value > 50) return '#1976d2';
+                if (value > 10) return '#42a5f5';
+                return '#bbdefb';
+            }
+        }
+
+        // Load CSV
+        fetch('Nigeria_HRP_political_violence.csv')
+            .then(response => response.text())
+            .then(csv => {
+                Papa.parse(csv, {
+                    header: true,
+                    complete: function(results) {
+                        allData = results.data.filter(row => row.Country);
+                        
+                        // Aggregate data by Admin1
+                        const aggregated = {};
+                        allData.forEach(row => {
+                            const admin1 = row.Admin1;
+                            if (!aggregated[admin1]) {
+                                aggregated[admin1] = {
+                                    admin1: admin1,
+                                    events: 0,
+                                    fatalities: 0,
+                                    entries: []
+                                };
+                            }
+                            aggregated[admin1].events += parseInt(row.Events) || 0;
+                            aggregated[admin1].fatalities += parseInt(row.Fatalities) || 0;
+                            aggregated[admin1].entries.push(row);
+                        });
+
+                        // Populate year filter
+                        const years = [...new Set(allData.map(row => row.Year))].sort();
+                        const yearSelect = document.getElementById('yearFilter');
+                        years.forEach(year => {
+                            const option = document.createElement('option');
+                            option.value = year;
+                            option.textContent = year;
+                            yearSelect.appendChild(option);
+                        });
+
+                        // Add markers
+                        function updateMap() {
+                            markers.forEach(m => map.removeLayer(m));
+                            markers = [];
+
+                            const selectedYear = document.getElementById('yearFilter').value;
+                            const metric = document.getElementById('metricFilter').value;
+
+                            Object.entries(aggregated).forEach(([admin1, data]) => {
+                                let value = 0;
+                                if (selectedYear) {
+                                    value = data.entries
+                                        .filter(e => e.Year === selectedYear)
+                                        .reduce((sum, e) => sum + (parseInt(e[metric]) || 0), 0);
+                                } else {
+                                    value = metric === 'Events' ? data.events : data.fatalities;
+                                }
+
+                                if (nigeriaRegions[admin1]) {
+                                    const coords = nigeriaRegions[admin1];
+                                    const color = getColor(value, metric);
+                                    const size = Math.min(value / 5 + 10, 50);
+
+                                    const marker = L.circleMarker(coords, {
+                                        radius: size,
+                                        fillColor: color,
+                                        color: '#333',
+                                        weight: 2,
+                                        opacity: 0.8,
+                                        fillOpacity: 0.7
+                                    });
+
+                                    marker.bindPopup(`
+                                        <div class="popup-title">${admin1}</div>
+                                        <div class="popup-content">
+                                            <strong>${metric}:</strong> ${value}<br/>
+                                            <strong>Total Events:</strong> ${data.events}<br/>
+                                            <strong>Total Fatalities:</strong> ${data.fatalities}
+                                        </div>
+                                    `);
+
+                                    marker.addTo(map);
+                                    markers.push(marker);
+                                }
+                            });
+                        }
+
+                        updateMap();
+
+                        // Add event listeners
+                        document.getElementById('yearFilter').addEventListener('change', updateMap);
+                        document.getElementById('metricFilter').addEventListener('change', updateMap);
+
+                        // Add legend
+                        const info = L.control();
+                        info.onAdd = function() {
+                            this._div = L.DomUtil.create('div', 'info');
+                            this._div.innerHTML = `
+                                <h4>Nigeria Political Violence</h4>
+                                <div class="legend">
+                                    <p><strong>Circle Size & Color:</strong><br/>
+                                    Indicates intensity of events or fatalities<br/>
+                                    Larger circles = Higher values<br/>
+                                    <br/>
+                                    <strong>Data:</strong><br/>
+                                    Events and Fatalities by Admin Region<br/>
+                                    (1997-Present)
+                                    </p>
+                                </div>
+                            `;
+                            return this._div;
+                        };
+                        info.addTo(map);
+                    }
+                });
+            })
+            .catch(error => console.error('Error loading CSV:', error));
+    </script>
+</body>
+</html>
