@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nigeria Admin2 Political Violence Map</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        .info h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+        .legend {
+            line-height: 18px;
+            color: #555;
+            font-size: 12px;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            z-index: 400;
+            font-size: 14px;
+        }
+        .controls select {
+            padding: 5px;
+            margin: 5px 0;
+            width: 100%;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+        }
+        .popup-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #d32f2f;
+        }
+        .popup-content {
+            font-size: 12px;
+        }
+        .top-link {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            z-index: 400;
+            font-size: 12px;
+        }
+        .top-link a {
+            color: #1565c0;
+            text-decoration: none;
+        }
+        .top-link a:hover {
+            text-decoration: underline;
+        }
+        .label-marker {
+            font-size: 10px;
+            font-weight: bold;
+            color: #333;
+            text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;
+            pointer-events: none;
+            text-align: center;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="top-link">
+        <a href="index.html">← Back to Home</a>
+    </div>
+    <div class="controls">
+        <label>Filter by Metric:</label>
+        <select id="metricFilter">
+            <option value="Events">Events</option>
+            <option value="Fatalities">Fatalities</option>
+        </select>
+        <br/>
+        <label>Zoom Level:</label>
+        <select id="zoomLevel">
+            <option value="5">Country View</option>
+            <option value="7">State Level</option>
+            <option value="9">Detailed View</option>
+        </select>
+    </div>
+
+    <script>
+        // Initialize map
+        const map = L.map('map').setView([9.0765, 7.3986], 5);
+        
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        let allData = [];
+        let markers = [];
+        let textLabels = [];
+
+        // Comprehensive Nigeria Admin2 (LGA) coordinates
+        const admin2Coords = {
+            'Abia': {'Isiala Ngwa South': [5.45, 7.37], 'Ikwuano': [5.52, 7.65], 'Obi Ngwa': [5.58, 7.48], 'Arochukwu': [5.40, 7.93], 'Bende': [5.65, 7.68], 'Ukwa West': [5.07, 7.15], 'Ukwa East': [5.13, 7.25], 'Isiala Ngwa North': [5.48, 7.42], 'Osisioma Ngwa': [5.48, 7.32], 'Ugwunagbo': [5.38, 7.55], 'Umuahia South': [5.52, 7.48], 'Umuahia North': [5.55, 7.50], 'Isuikwuato': [5.70, 7.60], 'Umunneochi': [5.80, 7.58]},
+            'Adamawa': {'Mayo-Belwa': [9.20, 13.30], 'Shelleng': [9.35, 13.05], 'Yola-South': [9.20, 12.50], 'Yola-North': [9.25, 12.48], 'Girei': [9.30, 12.70], 'Guyuk': [9.40, 12.20], 'Hong': [9.15, 12.80], 'Jalingo': [8.90, 11.40], 'Karim-Lamido': [9.05, 11.55], 'Kurmi': [9.12, 11.28], 'Lau': [9.30, 11.15], 'Ardo-Kola': [8.80, 11.62], 'Numan': [8.75, 12.03], 'Demsa': [8.65, 12.15], 'Lamurde': [8.70, 12.40], 'Mubi-North': [10.27, 13.27], 'Mubi-South': [10.18, 13.25], 'Michika': [10.35, 13.57], 'Madagali': [10.50, 13.42], 'Maiha': [10.32, 13.18], 'Ganye': [8.90, 11.95], 'Toungo': [8.75, 11.70], 'Gombi': [9.90, 12.43], 'Jada': [10.05, 12.67], 'Madorawa': [10.22, 12.05]},
+            'Akwa Ibom': {'Ibeno': [4.32, 8.15], 'Nsit Ubium': [4.58, 7.95], 'Okobo': [4.48, 8.32], 'Onna': [4.65, 8.05], 'Oruk Anam': [4.52, 8.18], 'Eket': [4.65, 8.28], 'Essien Udim': [4.72, 7.82], 'Etim Ekpo': [4.85, 7.68], 'Mbo': [4.33, 8.45], 'Urue-Offong': [4.48, 8.55], 'Oron': [4.45, 8.70], 'Udung-Uko': [4.52, 8.35], 'Abak': [4.72, 7.42], 'Etung': [4.78, 7.55], 'Ikono': [4.95, 7.65], 'Itu': [5.12, 7.75], 'Ibom': [5.02, 7.88], 'Ini': [5.28, 7.85], 'Mkpat Enin': [4.82, 7.70], 'Nsit-Ibom': [4.65, 7.92], 'Uyo': [5.00, 7.93], 'Uruan': [5.08, 8.08], 'Eket': [4.65, 8.28], 'Onna': [4.65, 8.05], 'Etinan': [4.90, 7.87]},
+            'Anambra': {'Awka North': [6.49, 7.00], 'Awka South': [6.43, 7.05], 'Ihiala': [6.05, 7.00], 'Nnewi North': [6.03, 6.92], 'Nnewi South': [5.98, 6.95], 'Ogbaru': [6.15, 6.78], 'Onitsha North': [6.15, 6.82], 'Onitsha South': [6.13, 6.80], 'Oyi': [6.48, 7.48], 'Anambra East': [6.68, 7.22], 'Anambra West': [6.50, 7.10], 'Ayamelum': [6.70, 7.35], 'Idemili North': [6.22, 6.95], 'Idemili South': [6.20, 6.90], 'Ekwusigo': [6.30, 6.88], 'Dunukofia': [6.35, 6.98]},
+            'Bauchi': {'Darazo': [10.31, 11.50], 'Kirfi': [10.65, 10.95], 'Ardo-Kola': [8.80, 11.62], 'Bauchi': [10.30, 9.84], 'Ganjuwa': [10.50, 9.70], 'Katagum': [11.93, 11.05], 'Shira': [10.80, 9.60], 'Tafawa-Balewa': [10.15, 9.55], 'Gamawa': [11.70, 10.20], 'Kafin-Hausa': [11.05, 10.60], 'Dass': [10.00, 10.05], 'Bogoro': [10.18, 10.32], 'Misau': [10.65, 10.52]},
+            'Borno': {'Bama': [10.77, 13.78], 'Dikwa': [12.73, 13.90], 'Gwoza': [10.97, 13.57], 'Konduga': [11.80, 12.97], 'Maiduguri': [11.85, 13.15], 'Marte': [13.20, 14.28], 'Monguno': [13.03, 13.70], 'Ngala': [12.55, 14.45], 'Chibok': [10.93, 12.30], 'Damboa': [11.43, 12.35], 'Jere': [11.85, 13.17], 'Kaga': [12.33, 13.32], 'Kala-Balge': [12.82, 13.55], 'Kangarum': [13.35, 14.12], 'Magumeri': [12.15, 11.68], 'Mafa': [11.95, 13.73], 'Mobbar': [13.30, 13.92], 'Nganzai': [12.85, 13.15], 'Shani': [12.03, 11.38], 'Gujba': [11.50, 11.23], 'Hawul': [11.25, 13.50], 'Logon Chabol': [11.25, 14.55], 'Guzamala': [12.55, 14.27], 'Bayo': [11.25, 13.50], 'Kauran Namoda': [12.77, 13.85], 'Katagum': [11.93, 11.05], 'Yobe': [11.65, 11.78]},
+            'Cross River': {'Calabar South': [5.95, 8.85], 'Ikom': [6.62, 9.12], 'Obubra': [6.73, 9.42], 'Obudu': [6.65, 9.35], 'Odukpani': [6.52, 8.95], 'Akamkpa': [6.20, 8.72], 'Bekwarra': [6.90, 8.55], 'Boki': [7.15, 9.55], 'Calabar Municipal': [5.93, 8.75], 'Ogoja': [6.70, 8.70], 'Yala': [6.58, 8.42], 'Manyu': [6.50, 9.75], 'Biase': [6.28, 8.50]},
+            'Delta': {'Ika South': [5.74, 5.73], 'Isoko South': [5.60, 6.08], 'Oshimili South': [5.98, 6.58], 'Patani': [5.20, 5.98], 'Uvwie': [5.52, 5.60], 'Aniocha North': [6.15, 6.45], 'Aniocha South': [6.02, 6.48], 'Bomadi': [5.38, 6.22], 'Burutu': [5.30, 5.42], 'Ethiope East': [5.72, 5.82], 'Ethiope West': [5.92, 5.38], 'Ika North East': [5.85, 5.70], 'Isoko North': [5.73, 6.18], 'Ndokwa East': [6.42, 6.62], 'Ndokwa West': [6.35, 6.35], 'Oshimili North': [6.28, 6.72], 'Sapele': [5.75, 5.65], 'Udu': [5.45, 5.55], 'Ughelli North': [5.58, 5.52], 'Ughelli South': [5.40, 5.48], 'Warri North': [5.50, 5.75], 'Warri South': [5.52, 5.78], 'Warri South West': [5.35, 5.32]},
+            'Ebonyi': {'Izzi': [6.35, 8.12], 'Abakaliki': [6.32, 8.10], 'Afikpo North': [6.32, 8.70], 'Afikpo South': [6.18, 8.62], 'Ebonyi': [6.58, 8.20], 'Ivo': [6.20, 7.95], 'Ishielu': [6.50, 7.88], 'Nsukka': [6.45, 7.40], 'Ohaozara': [6.48, 8.35], 'Onicha': [6.55, 8.45]},
+            'Edo': {'Akoko Edo': [6.56, 5.75], 'Esan South East': [6.35, 5.92], 'Oredo': [6.50, 5.60], 'Ovia North East': [6.42, 5.78], 'Benin City': [6.48, 5.63], 'Egor': [6.52, 5.58], 'Etsako East': [7.20, 6.15], 'Etsako West': [7.15, 5.88], 'Orhionmwon': [6.35, 5.48], 'Ovia South West': [6.25, 5.35], 'Uhunmwonde': [6.40, 5.40], 'Esan Central': [6.45, 6.05], 'Esan North East': [6.65, 6.25], 'Esan West': [6.55, 6.00], 'Igbokoda': [6.18, 4.75], 'Owan East': [7.35, 6.50], 'Owan West': [7.30, 6.35]},
+            'Ekiti': {'Irepodun': [7.62, 5.22], 'Ekiti East': [7.48, 5.52], 'Ekiti South-West': [7.35, 5.08], 'Ekiti West': [7.80, 5.15], 'Emure': [7.65, 5.42], 'Gbonyin': [7.58, 5.68], 'Ido Osi': [7.42, 5.88], 'Ijero': [7.75, 5.35], 'Ikere': [7.58, 5.30], 'Ikole': [7.70, 5.55], 'Ilesha East': [7.62, 5.15], 'Moba': [7.85, 5.62], 'Oye': [7.92, 5.72]},
+            'Enugu': {'Nkanu West': [6.43, 7.51], 'Enugu East': [6.50, 7.55], 'Enugu North': [6.55, 7.62], 'Enugu South': [6.45, 7.48], 'Isiuzo': [6.73, 7.68], 'Nkanu East': [6.68, 7.60], 'Nsukka': [6.45, 7.40], 'Udenu': [6.58, 7.35], 'Uzo-Uwani': [6.70, 7.80], 'Coal City': [6.35, 7.42], 'Igbo-Etiti': [6.60, 7.42], 'Oji River': [6.28, 7.35]},
+            'Gombe': {'Kaltungo': [10.29, 11.17], 'Akko': [10.45, 11.85], 'Balanga': [10.60, 11.30], 'Billiri': [10.15, 11.40], 'Dukku': [10.50, 11.05], 'Funakaye': [10.72, 11.50], 'Gombe': [10.30, 11.17], 'Kwami': [10.55, 11.25], 'Nafada': [10.40, 10.95], 'Shongom': [10.35, 11.10], 'Yamaltu/Deba': [10.25, 11.35]},
+            'Imo': {'Ahiazu Mbaise': [5.48, 7.03], 'Ezinihitte Mbaise': [5.50, 7.08], 'Ideato North': [5.45, 6.92], 'Isu': [5.52, 7.15], 'Nkwerre': [5.58, 7.25], 'Orsu': [5.40, 7.10], 'Ikeduru': [5.70, 7.00], 'Owerri West': [5.72, 6.95], 'Owerri North': [5.78, 6.88], 'Owerri Municipal': [5.75, 6.90], 'Aboh Mbaise': [5.55, 7.35], 'Ehime Mbano': [5.65, 7.20], 'Gokana': [5.35, 6.78], 'Isuikwuato': [5.70, 7.60], 'Mbaitoli': [5.60, 7.05], 'Onuimo': [5.82, 7.28]},
+            'Jigawa': {'Auyo': [12.00, 9.25], 'Babura': [12.35, 9.15], 'Birniwa': [12.55, 9.35], 'Buji': [12.15, 9.05], 'Dutse': [12.40, 9.50], 'Garki': [12.28, 9.12], 'Garun Mallam': [11.95, 9.38], 'Guri': [12.08, 9.52], 'Gwaram': [11.70, 9.35], 'Gwiwa': [12.18, 9.42], 'Hadejia': [12.45, 10.00], 'Jahun': [12.30, 9.68], 'Kaugama': [12.00, 9.70], 'Kazaure': [12.72, 9.92], 'Kiyawa': [12.88, 9.55], 'Kordofan': [12.15, 8.85], 'Kunkama': [12.52, 9.68], 'Maigatari': [12.80, 9.35], 'Malam Madori': [12.92, 9.72], 'Miga': [12.42, 8.95]},
+            'Kaduna': {'Birnin-Gwari': [10.52, 7.44], 'Chikun': [10.50, 7.60], 'Giwa': [10.68, 7.35], 'Igabi': [10.70, 7.55], 'Jaba': [10.35, 7.75], 'Jema-a': [10.45, 7.38], 'Kaduna North': [10.55, 7.42], 'Kaduna South': [10.48, 7.38], 'Kagarko': [10.38, 7.50], 'Kaura': [10.15, 7.92], 'Kauru': [10.25, 7.75], 'Kazaure': [12.72, 9.92], 'Kudan': [10.90, 7.65], 'Kubau': [10.95, 7.48], 'Lere': [9.92, 7.85], 'Makarfi': [10.92, 7.88], 'Manchok': [9.95, 8.05], 'Mapilli': [10.70, 7.72], 'Maraban Jos': [9.85, 8.28], 'Saminaka': [9.78, 8.35], 'Sabon-Gida': [10.88, 7.42], 'Soba': [10.68, 7.32], 'Zangon-Kataf': [10.15, 8.18], 'Zaria': [11.10, 7.70]},
+            'Kano': {'Ajinkyira': [11.99, 8.51], 'Bebeji': [12.18, 8.35], 'Bunkure': [12.42, 8.28], 'Dala': [11.95, 8.42], 'Dambatta': [12.52, 8.55], 'Dawakin Kudu': [12.15, 8.18], 'Dawakin Tofa': [11.78, 8.35], 'Doguwa': [12.25, 8.18], 'Fagge': [12.00, 8.50], 'Gabasawa': [12.75, 8.70], 'Garko': [12.55, 8.72], 'Garun Mallam': [11.95, 9.38], 'Gaya': [12.65, 8.15], 'Gwarzo': [12.35, 8.75], 'Kabo': [12.42, 8.92], 'Kadi': [12.15, 8.92], 'Karaye': [12.62, 8.92], 'Kari': [11.88, 8.08], 'Karniyari': [11.92, 8.28], 'Katsina': [12.99, 7.61]},
+            'Lagos': {'Agege': [6.57, 3.35], 'Ajeromi-Ifelodun': [6.50, 3.38], 'Alimosho': [6.62, 3.22], 'Amuwo-Odofin': [6.48, 3.28], 'Apapa': [6.42, 3.38], 'Badagry': [6.42, 2.87], 'Epe': [6.58, 3.98], 'Eti-Osa': [6.42, 3.65], 'Ibeju-Lekki': [6.48, 4.08], 'Ifako-Ijaiye': [6.70, 3.32], 'Ikoyi': [6.45, 3.42], 'Ikorodu': [6.58, 3.50], 'Isolo': [6.55, 3.45], 'Kosofe': [6.55, 3.62], 'Lagos Mainland': [6.48, 3.40], 'Lagos Island': [6.42, 3.38], 'Lekki': [6.45, 3.65], 'Mushin': [6.52, 3.35], 'Ojo': [6.68, 3.12], 'Oshodi-Isolo': [6.55, 3.42], 'Shomolu': [6.52, 3.42], 'Somolu': [6.48, 3.45], 'Surulere': [6.50, 3.35]},
+            'Niger': {'Bosso': [9.17, 6.27], 'Chanchaga': [9.22, 6.32], 'Gbako': [9.12, 5.92], 'Gurara': [9.38, 6.48], 'Lavun': [8.98, 5.68], 'Magama': [9.28, 5.88], 'Mariga': [8.85, 5.50], 'Mashegu': [9.42, 5.92], 'Mokwa': [9.08, 5.38], 'Munya': [9.55, 6.35], 'Paikoro': [9.45, 6.78], 'Rafi': [8.85, 6.15], 'Suleja': [9.18, 7.18], 'Tafa': [9.25, 7.42], 'Wushishi': [8.95, 6.05]},
+            'Ogun': {'Abeokuta North': [6.67, 3.35], 'Abeokuta South': [6.63, 3.38], 'Ado-Odo/Ota': [6.58, 3.22], 'Ifo': [6.72, 3.48], 'Ijebu North': [6.82, 3.58], 'Ijebu North East': [6.88, 3.62], 'Ijebu Ode': [6.82, 3.60], 'Ikenne': [6.75, 3.52], 'Imeko Afon': [6.88, 3.00], 'Ipokia': [6.55, 3.08], 'Obafemi Owode': [6.78, 3.35], 'Odeda': [6.78, 3.42], 'Odogbolu': [6.75, 3.58], 'Ogun Waterside': [6.42, 4.08], 'Remo North': [6.92, 3.72], 'Sagamu': [6.85, 3.65], 'Yewa North': [6.78, 2.95], 'Yewa South': [6.68, 3.05]},
+            'Ondo': {'Akoko North-East': [7.25, 5.23], 'Akoko North-West': [7.35, 5.10], 'Akoko South-West': [7.15, 5.15], 'Akoko South-East': [7.20, 5.35], 'Akure North': [7.30, 5.25], 'Akure South': [7.28, 5.22], 'Ese Odo': [7.08, 4.82], 'Ile-Oluji/Okeigbo': [7.02, 4.88], 'Ilaje': [6.88, 4.70], 'Isokan': [6.95, 5.02], 'Oba Akoko': [7.45, 5.48], 'Odigbo': [6.85, 5.10], 'Ondo East': [7.05, 5.32], 'Ondo West': [7.10, 5.28], 'Ose': [7.30, 5.68], 'Owo': [7.20, 5.60]},
+            'Osun': {'Aiyedire': [7.78, 4.56], 'Atakumosa East': [7.52, 4.68], 'Atakumosa West': [7.48, 4.62], 'Boluwaduro': [7.85, 4.75], 'Boripe': [7.75, 4.65], 'Ede North': [7.72, 4.52], 'Ede South': [7.70, 4.50], 'Ife Central': [7.62, 4.48], 'Ife East': [7.65, 4.55], 'Ife North': [7.68, 4.45], 'Ife South': [7.60, 4.50], 'Ifelodun': [8.05, 4.62], 'Ilesha East': [7.62, 5.15], 'Ilesha West': [7.60, 5.18], 'Irepodun': [7.78, 4.60], 'Irewole': [7.58, 4.35], 'Iwoland': [7.85, 4.70], 'Obokun': [8.15, 4.88], 'Olorunda': [8.18, 4.95], 'Oriade': [8.22, 5.12], 'Orisumbare': [8.02, 4.78], 'Oroki': [8.10, 4.85], 'Osogbo': [7.78, 4.60], 'Osu': [7.72, 4.58], 'Ota-Efun': [7.88, 4.72], 'Otun-Ekiti': [8.25, 5.15], 'Owu': [7.68, 4.42]},
+            'Oyo': {'Afijio': [8.00, 3.94], 'Akinyele': [7.92, 3.88], 'Atiba': [7.88, 3.78], 'Atigbo': [7.95, 3.82], 'Egbeda': [7.85, 3.92], 'Ibadan North': [7.85, 3.95], 'Ibadan North-East': [7.88, 3.98], 'Ibadan North-West': [7.82, 3.92], 'Ibadan South-East': [7.80, 3.90], 'Ibadan South-West': [7.78, 3.88], 'Ibarapa Central': [8.15, 3.62], 'Ibarapa East': [8.22, 3.65], 'Ibarapa North': [8.18, 3.55], 'Ido': [8.08, 3.88], 'Iseyin': [8.00, 3.70], 'Itesiwaju': [8.32, 3.50], 'Iwoland': [7.85, 4.70], 'Iwajowa': [8.25, 3.65], 'Kajola': [7.98, 3.82], 'Lagelu': [7.75, 3.98], 'Ogbomosho North': [8.12, 4.25], 'Ogbomosho South': [8.10, 4.28], 'Olounda': [8.05, 4.00], 'Oluyole': [7.82, 3.95], 'Ona-Ara': [7.95, 4.05], 'Oyo East': [8.05, 4.10], 'Oyo West': [8.00, 4.08], 'Saki East': [8.52, 3.95], 'Saki West': [8.48, 3.92], 'Surulere North': [8.28, 4.12], 'Surulere South': [8.25, 4.08]},
+            'Plateau': {'Barkin Ladi': [9.30, 9.77], 'Bassa': [9.22, 9.65], 'Bokkos': [9.38, 9.55], 'Jos East': [9.85, 9.95], 'Jos North': [9.92, 9.88], 'Jos South': [9.88, 9.90], 'Kanam': [9.42, 9.38], 'Kanwon': [9.55, 9.48], 'Langtang North': [9.12, 9.42], 'Langtang South': [9.05, 9.38], 'Mangu': [9.35, 9.62], 'Mikang': [9.48, 9.55], 'Pankshin': [9.45, 9.70], 'Quam': [9.28, 9.32], 'Riyom': [9.65, 9.72], 'Shendam': [9.18, 9.88], 'Wase': [8.95, 9.92]},
+            'Rivers': {'Abua/Odual': [4.70, 7.52], 'Ahoada East': [4.80, 7.35], 'Ahoada West': [4.75, 7.25], 'Akuku-Toru': [4.65, 7.15], 'Andoni': [4.48, 7.85], 'Asari-Toru': [4.82, 7.42], 'Bonny': [4.42, 7.22], 'Degema': [4.78, 7.58], 'Eleme': [4.92, 7.32], 'Emuoha': [4.88, 7.45], 'Etche': [5.12, 7.28], 'Gokana': [5.35, 6.78], 'Gobo': [5.18, 7.35], 'Khana': [5.22, 7.18], 'Obio/Akpor': [5.00, 7.38], 'Ogba/Egbema': [5.08, 7.22], 'Ogu/Bolo': [4.92, 7.18], 'Okrika': [4.95, 7.48], 'Omuma': [5.12, 7.42], 'Opobo/Nkoro': [4.65, 7.72], 'Oyigbo': [5.12, 7.12], 'Port Harcourt': [4.75, 7.15], 'Tai': [5.25, 7.05]},
+            'Sokoto': {'Binji': [13.00, 5.25], 'Bodinga': [12.88, 5.18], 'Dange-Shuni': [13.10, 5.38], 'Gada': [12.95, 5.45], 'Goronyo': [13.15, 5.35], 'Gudu': [13.22, 5.52], 'Guhwa': [13.25, 5.58], 'Gwadabawa': [13.18, 5.42], 'Gwarzo': [12.35, 8.75], 'Illela': [13.42, 5.62], 'Isa': [13.35, 5.45], 'Kabba': [13.28, 5.35], 'Kebbe': [13.15, 5.28], 'Kware': [13.08, 5.38], 'Rabah': [13.12, 5.15], 'Sakaba': [12.98, 5.08], 'Saliego': [13.05, 5.22], 'Shagamu': [13.22, 5.55], 'Silame': [13.32, 5.50], 'Sokoto North': [13.00, 5.25], 'Sokoto South': [12.95, 5.20], 'Tambuwal': [12.90, 5.35], 'Tureta': [12.92, 5.15], 'Wamakko': [13.02, 5.22], 'Wurno': [13.08, 5.12], 'Yabo': [12.85, 5.05]},
+            'Taraba': {'Ardo-Kola': [8.80, 11.62], 'Bali': [7.91, 11.27], 'Donga': [7.65, 10.88], 'Gashaka': [7.32, 11.92], 'Gassol': [7.75, 11.08], 'Ibi': [7.48, 9.73], 'Itas-Gadau': [8.12, 11.45], 'Jalingo': [8.90, 11.40], 'Karim-Lamido': [9.05, 11.55], 'Kau': [8.35, 11.72], 'Kurmi': [9.12, 11.28], 'Lau': [9.30, 11.15], 'Sardauna': [7.15, 11.75], 'Takum': [7.68, 10.95], 'Taraba': [8.70, 11.95], 'Ussa': [7.42, 11.42], 'Wukari': [7.88, 10.80], 'Yangara': [7.45, 12.12], 'Yorro': [8.08, 11.62]},
+            'Yobe': {'Bade': [11.88, 11.50], 'Bursari': [12.27, 11.65], 'Damaturu': [11.96, 11.97], 'Fune': [11.48, 11.22], 'Geidam': [12.02, 12.45], 'Gujba': [11.50, 11.23], 'Karasuwa': [12.45, 12.65], 'Karua': [11.65, 11.88], 'Kazaure': [12.72, 9.92], 'Machina': [12.18, 12.12], 'Nangere': [11.75, 11.65], 'Nguru': [12.15, 10.45], 'Potiskum': [11.78, 11.15], 'Tarmuwa': [12.05, 11.88], 'Yunusari': [12.35, 11.35], 'Yusufari': [12.50, 11.52]},
+            'Zamfara': {'Anka': [12.80, 6.27], 'Bakura': [12.52, 5.82], 'Birnin-Magaji': [12.65, 6.42], 'Bukuyyum': [12.75, 5.95], 'Bungudu': [12.70, 6.15], 'Daura': [12.88, 5.72], 'Faskari': [12.92, 6.05], 'Funtua': [12.80, 6.35], 'Gummi': [12.42, 6.58], 'Gusau': [12.65, 6.65], 'Kaura Namoda': [12.77, 13.85], 'Kauru': [10.25, 7.75], 'Kazaure': [12.72, 9.92], 'Malumfashi': [12.85, 6.50], 'Mani': [12.55, 6.88], 'Maru': [12.62, 6.82], 'Masari': [12.92, 6.60], 'Matazu': [12.55, 6.45], 'Safaru': [12.35, 6.95], 'Sabon-Gida': [10.88, 7.42], 'Talata-Mafara': [12.48, 6.72], 'Tsafe': [12.35, 6.35], 'Tundu Wada': [12.45, 6.55]},
+            'Katsina': {'Achamaja': [12.99, 7.61], 'Bakori': [12.92, 7.45], 'Batagarawa': [13.12, 7.88], 'Batsari': [13.25, 7.72], 'Baure': [13.35, 7.65], 'Bindawa': [13.18, 7.55], 'Danja': [13.05, 7.35], 'Dandume': [13.42, 7.55], 'Dankama': [13.28, 7.40], 'Daura': [13.48, 7.75], 'Faskari': [12.92, 6.05], 'Funtua': [12.80, 6.35], 'Ingawa': [13.38, 7.82], 'Jibia': [13.22, 7.35], 'Jigawa': [12.99, 9.25], 'Kaita': [13.15, 7.65], 'Kargi': [13.52, 7.92], 'Katsina': [12.99, 7.61], 'Kankara': [12.88, 7.28], 'Kaura': [10.15, 7.92], 'Kazaure': [12.72, 9.92], 'Kurfi': [13.48, 7.48], 'Kusada': [13.62, 8.02], 'Mai Adua': [13.42, 7.68], 'Malumfashi': [12.85, 6.50], 'Mani': [12.55, 6.88], 'Mashi': [13.08, 7.72], 'Matazu': [12.55, 6.45], 'Musawa': [13.32, 7.78], 'Remo': [13.65, 8.15], 'Safaru': [12.35, 6.95], 'Sabuwa': [13.38, 7.62], 'Sakatsuki': [12.95, 7.40], 'Sandamu': [13.22, 7.48], 'Sarkin-Yamma': [12.85, 7.22], 'Sarua': [13.12, 7.92], 'Taura': [13.25, 8.05], 'Damaturu': [11.96, 11.97]},
+            'Kebbi': {'Aleiro': [12.44, 4.20], 'Argungu': [12.30, 4.35], 'Argungu North': [12.35, 4.32], 'Augie': [12.52, 4.45], 'Bagudo': [12.38, 4.52], 'Birnin Kebbi': [12.55, 4.25], 'Bunza': [12.18, 4.08], 'Dandi': [12.08, 4.15], 'Danko-Wasagu': [12.15, 4.40], 'Faruwa': [12.35, 4.35], 'Gwandu': [12.48, 4.48], 'Jega': [12.22, 4.55], 'Kalgo': [12.38, 4.38], 'Koko-Besse': [12.05, 3.98], 'Maiyama': [12.12, 4.05], 'Ngaski': [12.62, 4.35], 'Sakaba': [12.98, 5.08], 'Shanga': [12.32, 4.22], 'Suru': [12.48, 4.15], 'Yauri': [12.72, 4.60], 'Zuru': [12.80, 4.48]},
+            'Kogi': {'Ajaokuta': [7.49, 6.73], 'Ibaji': [7.62, 7.05], 'Idah': [7.75, 6.92], 'Igalamela-Odolu': [7.68, 7.18], 'Ijumu': [7.88, 5.35], 'Kabba-Bununu': [7.62, 6.35], 'Kogi': [7.80, 6.58], 'Lokoja': [7.85, 6.75], 'Mopamuro': [7.92, 6.82], 'Ofu': [7.72, 6.65], 'Ogori-Magongo': [7.78, 6.48], 'Okehi': [7.70, 6.42], 'Okene': [7.55, 6.28], 'Olamaboro': [7.65, 6.15], 'Omala': [8.02, 7.08], 'Yagba East': [7.95, 5.88], 'Yagba West': [7.88, 5.70]},
+            'Kwara': {'Asa': [8.80, 4.59], 'Baruten': [9.15, 3.90], 'Edu': [8.98, 4.88], 'Ekiti': [8.85, 5.12], 'Ifelodun': [8.05, 4.62], 'Ilorin East': [8.52, 4.55], 'Ilorin South': [8.48, 4.52], 'Ilorin West': [8.50, 4.48], 'Irepodun': [8.70, 4.70], 'Isin': [8.75, 4.95], 'Kaiama': [8.65, 4.35], 'Kamawo': [8.88, 4.45], 'Katagun': [9.02, 4.72], 'Kosubosu': [8.92, 4.82], 'Malete': [8.95, 4.65], 'Moro': [9.25, 4.45], 'Offa': [8.95, 4.70], 'Omu-Aran': [8.70, 4.80], 'Oyun': [8.70, 4.55], 'Patigi': [9.22, 4.82]},
+            'Nasarawa': {'Akwanga': [8.90, 8.98], 'Awe': [8.75, 8.42], 'Doma': [7.72, 8.88], 'Garaku': [8.92, 8.75], 'Giwa': [10.68, 7.35], 'Karu': [8.95, 9.15], 'Keana': [8.50, 8.28], 'Keffi': [9.10, 8.95], 'Kokona': [8.65, 9.35], 'Lafia': [8.50, 8.58], 'Mada': [8.25, 8.45], 'Nasarawa': [8.88, 8.68], 'Nasarawa Eggon': [8.70, 8.82], 'Obi': [8.32, 8.78], 'Olamaboro': [7.65, 6.15], 'Shabu': [8.55, 8.82], 'Toto': [9.25, 9.28], 'Wamba': [8.78, 9.12], 'Wase': [8.95, 9.92]},
+            'Federal Capital Territory': {'Bwari': [9.05, 7.54], 'Gwagwalada': [8.95, 7.08], 'Kuje': [8.82, 7.15], 'Kwali': [8.72, 7.42], 'Municipal': [9.08, 7.50]},
+            'Bayelsa': {'Brass': [4.75, 6.26], 'Nembe': [4.65, 6.35], 'Ogbia': [4.55, 6.18], 'Sagbama': [5.12, 6.05], 'Southern Ijaw': [4.85, 6.15], 'Yenagoa': [5.05, 6.27]},
+            'Benue': {'Gboko': [7.48, 8.73], 'Logo': [7.12, 8.82], 'Ushongo': [7.22, 8.92], 'Agatu': [7.35, 8.95], 'Apa': [7.60, 9.05], 'Buruku': [7.78, 9.12], 'Guma': [7.55, 9.25], 'Kwande': [7.42, 9.35], 'Makurdi': [7.75, 8.52], 'Obi': [8.32, 8.78], 'Ogbadibo': [7.92, 8.38], 'Oju': [7.68, 8.65], 'Otukpo': [7.35, 8.42], 'Tarka': [7.12, 8.50], 'Ukum': [6.95, 8.25], 'Ushongo': [7.22, 8.92], 'Vandeikya': [6.75, 8.15], 'Zaki-Biam': [7.28, 8.78]},
+        };
+
+        // Load CSV
+        fetch('Nigeria_HRP_political_violence.csv')
+            .then(response => response.text())
+            .then(csv => {
+                Papa.parse(csv, {
+                    header: true,
+                    complete: function(results) {
+                        allData = results.data.filter(row => row.Country);
+                        
+                        // Aggregate data by Admin2
+                        const aggregated = {};
+                        allData.forEach(row => {
+                            const admin1 = row.Admin1;
+                            const admin2 = row.Admin2;
+                            const key = `${admin1}|${admin2}`;
+                            
+                            if (!aggregated[key]) {
+                                aggregated[key] = {
+                                    admin1: admin1,
+                                    admin2: admin2,
+                                    events: 0,
+                                    fatalities: 0
+                                };
+                            }
+                            aggregated[key].events += parseInt(row.Events) || 0;
+                            aggregated[key].fatalities += parseInt(row.Fatalities) || 0;
+                        });
+
+                        // Create map markers with labels
+                        function updateMap() {
+                            markers.forEach(m => map.removeLayer(m));
+                            textLabels.forEach(label => map.removeLayer(label));
+                            markers = [];
+                            textLabels = [];
+
+                            const metric = document.getElementById('metricFilter').value;
+                            const zoom = parseInt(document.getElementById('zoomLevel').value);
+                            map.setZoom(zoom);
+
+                            Object.values(aggregated).forEach(data => {
+                                const coordDict = admin2Coords[data.admin1];
+                                if (coordDict && coordDict[data.admin2]) {
+                                    const coords = coordDict[data.admin2];
+                                    const value = metric === 'Events' ? data.events : data.fatalities;
+                                    
+                                    const color = metric === 'Fatalities' ? 
+                                        (value > 500 ? '#8B0000' : value > 100 ? '#DC143C' : value > 50 ? '#FF6347' : value > 10 ? '#FFA07A' : '#FFE4E1') :
+                                        (value > 500 ? '#1a237e' : value > 200 ? '#0d47a1' : value > 100 ? '#1565c0' : value > 50 ? '#42a5f5' : '#bbdefb');
+                                    
+                                    const size = Math.min(value / 10 + 3, 20);
+
+                                    const marker = L.circleMarker(coords, {
+                                        radius: size,
+                                        fillColor: color,
+                                        color: '#333',
+                                        weight: 2,
+                                        opacity: 0.8,
+                                        fillOpacity: 0.7
+                                    });
+
+                                    marker.bindPopup(`
+                                        <div class="popup-title">${data.admin2}</div>
+                                        <div class="popup-content">
+                                            <strong>State:</strong> ${data.admin1}<br/>
+                                            <strong>Events:</strong> ${data.events}<br/>
+                                            <strong>Fatalities:</strong> ${data.fatalities}
+                                        </div>
+                                    `);
+
+                                    marker.addTo(map);
+                                    markers.push(marker);
+
+                                    // Add text label
+                                    const label = L.marker(coords, {
+                                        icon: L.divIcon({
+                                            className: 'label-marker',
+                                            html: `<div>${data.admin2}</div>`,
+                                            iconSize: [60, 30]
+                                        })
+                                    });
+                                    label.addTo(map);
+                                    textLabels.push(label);
+                                }
+                            });
+                        }
+
+                        updateMap();
+
+                        // Event listeners
+                        document.getElementById('metricFilter').addEventListener('change', updateMap);
+                        document.getElementById('zoomLevel').addEventListener('change', updateMap);
+
+                        // Add legend
+                        const info = L.control();
+                        info.onAdd = function() {
+                            this._div = L.DomUtil.create('div', 'info');
+                            this._div.innerHTML = `
+                                <h4>Nigeria Admin2 Political Violence</h4>
+                                <div class="legend">
+                                    <p><strong>Circle Size & Color:</strong><br/>
+                                    Indicates intensity of events/fatalities<br/>
+                                    Hover over circles for LGA names<br/>
+                                    Click for detailed statistics<br/>
+                                    <br/>
+                                    <strong>Data:</strong><br/>
+                                    Events and Fatalities by<br/>
+                                    Local Government Area (LGA)<br/>
+                                    (1997-Present)
+                                    </p>
+                                </div>
+                            `;
+                            return this._div;
+                        };
+                        info.addTo(map);
+                    }
+                });
+            })
+            .catch(error => console.error('Error loading CSV:', error));
+    </script>
+</body>
+</html>
