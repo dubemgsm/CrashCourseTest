@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BAY States Educational Access Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+g6bH6kY0+WnR4kR2b1Qm3Qw4j8h1gqk2F5lM9F4M=" crossorigin=""/>
+  <style>
+    :root{--gap:12px;--kpicolor:#2b6cb0}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial; margin:0; padding:16px; background:#f7fafc; color:#1a202c}
+    h1{font-size:1.1rem;margin:0 0 8px}
+    .container{max-width:1200px;margin:0 auto}
+    .header{background:white;border-radius:8px;padding:12px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);text-align:center}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap);margin-bottom:12px}
+    .kpi{background:white;padding:14px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.04);text-align:center}
+    .kpi .value{font-size:1.6rem;font-weight:700;color:var(--kpicolor)}
+    .main{display:grid;grid-template-columns:1fr 320px;gap:var(--gap)}
+    .panel{background:white;padding:12px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    #map{height:640px;border-radius:6px}
+    .sidebar h3{margin-top:0}
+    .controls{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .dropdown{padding:8px;border-radius:6px;border:1px solid #e2e8f0;background:white}
+    .list{font-size:0.95rem}
+    @media (max-width:1000px){.main{grid-template-columns:1fr}#map{height:480px}}
+    .legend{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .legend .item{display:flex;align-items:center;gap:8px}
+    .dot{width:12px;height:12px;border-radius:50%}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>BAY States Educational Access Tracker</h1>
+      <div style="font-size:0.9rem;color:#4a5568">Interactive view of schools and conflict risk (5 km buffer)</div>
+    </div>
+
+    <div class="grid" role="region" aria-label="KPIs">
+      <div class="kpi">
+        <div style="font-size:0.85rem;color:#718096">KPI 1: Total Schools</div>
+        <div id="kpi-total" class="value">-</div>
+      </div>
+      <div class="kpi">
+        <div style="font-size:0.85rem;color:#718096">KPI 2: Schools Compromised</div>
+        <div id="kpi-compromised" class="value">-</div>
+      </div>
+      <div class="kpi">
+        <div style="font-size:0.85rem;color:#718096">KPI 3: Risk %</div>
+        <div id="kpi-risk" class="value">-</div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="panel" style="padding:8px">
+        <div class="controls">
+          <label for="stateFilter" style="font-weight:600">Filter by State:</label>
+          <select id="stateFilter" class="dropdown" aria-label="Filter by state">
+            <option value="All">All</option>
+            <option value="Borno">Borno</option>
+            <option value="Adamawa">Adamawa</option>
+            <option value="Yobe">Yobe</option>
+          </select>
+          <div style="margin-left:auto;font-size:0.9rem;color:#718096">Data source: data/processed/bay_schools_flagged.geojson</div>
+        </div>
+        <div id="map"></div>
+        <div class="legend">
+          <div class="item"><div class="dot" style="background:#e53e3e"></div>Compromised/Inaccessible</div>
+          <div class="item"><div class="dot" style="background:#38a169"></div>Accessible</div>
+        </div>
+      </div>
+
+      <div class="sidebar panel">
+        <h3>Top Vulnerable LGAs</h3>
+        <canvas id="lgaChart" width="300" height="200" style="max-width:100%"></canvas>
+        <div style="margin-top:12px">
+          <div class="list" id="lgaList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j8s5w0yF2lQv6e2p1jv0+qkq5YhP0R0m0+e9z0M=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // dashboard script
+    const GEOJSON_PATH = 'data/processed/bay_schools_flagged.geojson';
+    let rawFeatures = [];
+    let map, geoLayer, markersLayer;
+
+    function initMap(){
+      map = L.map('map', {preferCanvas:true}).setView([11.5, 12.0],6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap contributors'}).addTo(map);
+    }
+
+    function styleFeature(feature){
+      const v = (feature.properties && feature.properties.vulnerability) || feature.vulnerability || feature.properties.VULNERABILITY;
+      return {color: v && v.toLowerCase().includes('comprom') ? '#e53e3e' : '#38a169'};
+    }
+
+    function makePopup(f){
+      const p = f.properties || {};
+      const name = p.school_name || p.name || p.SCHOOL_NAME || p.SCHOOL || 'School';
+      const lga = p.lga || p.LGA || p.NAME_2 || p.admin2 || p.District || p.Local_Government || 'Unknown LGA';
+      const state = p.state || p.State || p.NAME_1 || p.admin1 || 'Unknown State';
+      const vuln = p.vulnerability || p.Vulnerability || 'Unknown';
+      return `<strong>${escapeHtml(name)}</strong><br/>${escapeHtml(lga)}, ${escapeHtml(state)}<br/><em>${escapeHtml(vuln)}</em>`;
+    }
+
+    function escapeHtml(s){return String(s||'').replace(/[&<>"']/g, function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m];});}
+
+    function loadData(){
+      fetch(GEOJSON_PATH).then(r=>{
+        if(!r.ok) throw new Error('GeoJSON not found: '+r.status);
+        return r.json()
+      }).then(data=>{
+        rawFeatures = data.features || (data.type==='Feature' ? [data] : []);
+        renderAll('All');
+      }).catch(err=>{
+        document.getElementById('kpi-total').textContent='N/A';
+        document.getElementById('kpi-compromised').textContent='N/A';
+        document.getElementById('kpi-risk').textContent='N/A';
+        console.error(err);
+        const mapDiv = document.getElementById('map');
+        mapDiv.innerHTML = '<div style="padding:20px;color:#742a2a">Could not load data: '+escapeHtml(err.message)+'</div>';
+      })
+    }
+
+    function renderAll(stateFilter){
+      const feats = rawFeatures.filter(f=>{
+        if(!f.properties) return false;
+        if(stateFilter==='All') return true;
+        const s = f.properties.state || f.properties.State || f.properties.NAME_1 || f.properties.admin1 || '';
+        return String(s) === stateFilter;
+      });
+
+      // compute KPIs
+      const total = feats.length;
+      const compromised = feats.filter(f=>{
+        const v = f.properties.vulnerability || f.properties.Vulnerability || '';
+        return String(v).toLowerCase().includes('comprom') || String(v).toLowerCase().includes('inaccess');
+      }).length;
+      const risk = total? (compromised/total*100).toFixed(1):0;
+
+      document.getElementById('kpi-total').textContent = total.toLocaleString();
+      document.getElementById('kpi-compromised').textContent = compromised.toLocaleString();
+      document.getElementById('kpi-risk').textContent = (total? risk+'%' : '0%');
+
+      // update map layer
+      if(geoLayer) geoLayer.remove();
+      geoLayer = L.geoJSON({type:'FeatureCollection',features:feats},{
+        pointToLayer: function(feature, latlng){
+          const v = feature.properties.vulnerability || feature.properties.Vulnerability || '';
+          const color = String(v).toLowerCase().includes('comprom') || String(v).toLowerCase().includes('inaccess') ? '#e53e3e' : '#38a169';
+          return L.circleMarker(latlng,{radius:6,fillColor:color,color:'#333',weight:0.6,fillOpacity:0.9});
+        },
+        onEachFeature:function(feature,layer){
+          layer.bindPopup(makePopup(feature));
+        }
+      }).addTo(map);
+
+      // fit map
+      try{map.fitBounds(geoLayer.getBounds(),{maxZoom:12});}catch(e){}
+
+      // prepare LGA ranking
+      const lgaKeyCandidates = ['lga','LGA','NAME_2','admin2','ADM2','district','District','Local_Government'];
+      const stateKeyCandidates = ['state','State','NAME_1','admin1','ADM1'];
+      const propsList = feats.map(f=>f.properties||{});
+      const lgaKey = lgaKeyCandidates.find(k=>propsList.some(p=>p.hasOwnProperty(k))) || null;
+      const stateKey = stateKeyCandidates.find(k=>propsList.some(p=>p.hasOwnProperty(k))) || null;
+
+      const byLga = {};
+      propsList.forEach(p=>{
+        const lga = (lgaKey && p[lgaKey])? String(p[lgaKey]) : 'Unknown';
+        const state = (stateKey && p[stateKey])? String(p[stateKey]) : '';
+        if(!byLga[lga]) byLga[lga] = {total:0,comp:0,state:state};
+        byLga[lga].total += 1;
+        const v = p.vulnerability || p.Vulnerability || '';
+        if(String(v).toLowerCase().includes('comprom') || String(v).toLowerCase().includes('inaccess')) byLga[lga].comp += 1;
+      });
+
+      const rows = Object.keys(byLga).map(k=>({lga:k,total:byLga[k].total,comp:byLga[k].comp,perc: byLga[k].total? (byLga[k].comp/byLga[k].total*100):0, state: byLga[k].state}));
+      rows.sort((a,b)=>b.perc - a.perc);
+      const top = rows.slice(0,6);
+
+      renderChart(top);
+      renderLgaList(top);
+    }
+
+    let chartInstance = null;
+    function renderChart(rows){
+      const ctx = document.getElementById('lgaChart').getContext('2d');
+      const labels = rows.map(r=>r.lga + (r.state? (' ('+r.state+')'):''));
+      const data = rows.map(r=>Number(r.perc.toFixed(1)));
+      if(chartInstance) chartInstance.destroy();
+      chartInstance = new Chart(ctx,{
+        type:'bar',
+        data:{labels:labels,datasets:[{label:'% Inaccessible',data:data,backgroundColor:'#e53e3e'}]},
+        options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
+      });
+    }
+
+    function renderLgaList(rows){
+      const el = document.getElementById('lgaList');
+      if(!rows.length){el.innerHTML='<div style="color:#718096">No LGAs to show</div>';return}
+      el.innerHTML = rows.map((r,i)=>`<div style="padding:6px 0;border-bottom:1px solid #f1f5f9"><strong>${i+1}. ${escapeHtml(r.lga)}</strong><div style="font-size:0.9rem;color:#4a5568">${escapeHtml(r.state)} — ${r.comp}/${r.total} (${r.perc.toFixed(1)}%)</div></div>`).join('');
+    }
+
+    // UI wiring
+    document.addEventListener('DOMContentLoaded', ()=>{
+      initMap();
+      loadData();
+      document.getElementById('stateFilter').addEventListener('change',(e)=>{
+        renderAll(e.target.value);
+      });
+    });
+  </script>
+</body>
+</html>
